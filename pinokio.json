@@ -1,0 +1,5 @@
+{
+  "title": "Meeting Recorder",
+  "description": "Запись встреч (Yandex Телемост), расшифровка через Yandex SpeechKit и извлечение задач/сроков/итога через LLM.",
+  "icon": "https://avatars.githubusercontent.com/u/0?s=200"
+}

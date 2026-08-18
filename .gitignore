@@ -1,0 +1,30 @@
+# Виртуальное окружение
+env/
+app/env/
+__pycache__/
+*.pyc
+
+# Скачанные модели (загружаются автоматически при первом запуске)
+app/models/
+
+# Временные и служебные файлы запуска
+*.log
+app/_run.*
+app/_launch.bat
+app/_test_*.py
+*.part
+
+# Сгенерированные отчёты
+app/report.md
+app/report.docx
+app/meeting_report_*.docx
+app/meeting.wav
+
+# Кэш и логи Pinokio
+cache/
+logs/
+*.json.bak
+
+# Локальные окружения Pinokio
+ENVIRONMENT
+

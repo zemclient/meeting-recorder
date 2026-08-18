@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Запись встреч → задачи и сроки</title>
+<style>
+  :root { --bg:#0f1420; --card:#19202e; --accent:#4f8cff; --ok:#37c871; --err:#ff5d5d; --muted:#8a94a6; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:#e7ecf3; }
+  header { padding:16px 20px; border-bottom:1px solid #232c3d; display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; }
+  .wrap { max-width:980px; margin:0 auto; padding:20px; display:grid; gap:18px; }
+  .card { background:var(--card); border:1px solid #232c3d; border-radius:12px; padding:16px; }
+  h2 { font-size:15px; margin:0 0 12px; color:#cdd6e4; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input, select, textarea { width:100%; background:#0e141f; border:1px solid #2a3445;
+    color:#e7ecf3; border-radius:8px; padding:9px 10px; font-size:13px; }
+  input:focus, select:focus, textarea:focus { outline:1px solid var(--accent); }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  button { cursor:pointer; border:none; border-radius:8px; padding:10px 16px; font-size:14px; font-weight:600; }
+  .btn-primary { background:var(--accent); color:#fff; }
+  .btn-danger { background:var(--err); color:#fff; }
+  .btn-ghost { background:#26324a; color:#cdd6e4; }
+  .btns { display:flex; gap:10px; }
+  .status { font-size:13px; padding:8px 12px; border-radius:8px; background:#0e141f; }
+  .status.rec { color:var(--err); }
+  .status.proc { color:var(--accent); }
+  .status.done { color:var(--ok); }
+  .status.err { color:var(--err); }
+  .bar { height:8px; background:#0e141f; border-radius:6px; overflow:hidden; margin-top:8px; }
+  .bar > i { display:block; height:100%; width:0%; background:var(--accent); transition:width .3s; }
+  .out { white-space:pre-wrap; font-size:13px; line-height:1.5; max-height:520px; overflow:auto;
+    background:#0e141f; border:1px solid #232c3d; border-radius:8px; padding:12px; }
+  .task { border-left:3px solid var(--accent); padding:8px 12px; margin:8px 0; background:#0e141f; border-radius:6px; }
+  .task b { color:#fff; }
+  .meta { color:var(--muted); font-size:12px; }
+  a.dl { color:var(--accent); font-size:13px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header><h1>🎙️ Запись встреч → задачи, сроки, итог</h1></header>
+<div class="wrap">
+
+  <div class="card">
+    <h2>Настройки (локально / OpenAI)</h2>
+    <div class="row">
+      <div>
+        <label>STT провайдер (распознавание речи)</label>
+        <select id="stt_provider">
+          <option value="yandex" {% if config.stt_provider=='yandex' %}selected{% endif %}>Yandex SpeechKit</option>
+          <option value="openai" {% if config.stt_provider=='openai' %}selected{% endif %}>OpenAI Whisper (без Яндекса)</option>
+          <option value="local" {% if config.stt_provider=='local' %}selected{% endif %}>Локально (offline, faster-whisper)</option>
+        </select>
+      </div>
+      <div>
+        <label>Провайдер анализа (LLM)</label>
+        <select id="analysis_provider">
+          <option value="local" {% if config.analysis_provider=='local' %}selected{% endif %}>Локальная LLM (offline, llama.cpp)</option>
+          <option value="openai" {% if config.analysis_provider=='openai' %}selected{% endif %}>OpenAI</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Режим записи</label>
+        <select id="record_mode">
+          <option value="auto" {% if config.record_mode=='auto' %}selected{% endif %}>Авто (система+микрофон)</option>
+          <option value="loopback" {% if config.record_mode=='loopback' %}selected{% endif %}>Только системный звук</option>
+          <option value="mic" {% if config.record_mode=='mic' %}selected{% endif %}>Только микрофон</option>
+          <option value="both" {% if config.record_mode=='both' %}selected{% endif %}>Система + микрофон (микс)</option>
+        </select>
+      </div>
+      <div></div>
+    </div>
+    <div id="sttYandexBox">
+      <div class="row">
+        <div>
+          <label>STT: API-key Yandex SpeechKit</label>
+          <input id="stt_api_key" type="password" placeholder="AQAA..." value="{{config.stt_api_key}}">
+        </div>
+        <div>
+          <label>STT: Folder ID</label>
+          <input id="stt_folder_id" placeholder="b1g..." value="{{config.stt_folder_id}}">
+        </div>
+      </div>
+    </div>
+    <div id="sttOpenaiBox" class="hidden">
+      <div>
+        <label>STT Whisper: модель</label>
+        <input id="stt_model" placeholder="whisper-1" value="{{config.stt_model}}">
+      </div>
+    </div>
+    <div id="sttLocalBox" class="hidden">
+      <div>
+        <label>STT: локальная модель (faster-whisper)</label>
+        <input id="local_model" placeholder="small" value="{{config.local_model}}">
+        <div class="meta">Веса скачиваются автоматически при первом запуске (~460 МБ для small).</div>
+      </div>
+    </div>
+    <div id="llmLocalBox" class="hidden">
+      <div>
+        <label>Анализ: локальная модель (GGUF)</label>
+        <input id="llm_model" placeholder="qwen2.5-1.5b-instruct-q4_k_m.gguf" value="{{config.llm_model}}">
+        <div class="meta">Модель скачивается автоматически при первом анализе (~1.1 ГБ для 1.5B Q4).</div>
+      </div>
+    </div>
+    <div id="openaiAnalysisBox" class="hidden">
+      <div>
+        <label>OpenAI: модель (анализ)</label>
+        <input id="openai_model" placeholder="gpt-4o-mini" value="{{config.openai_model}}">
+      </div>
+    </div>
+    <div id="openaiKeyBox" class="hidden">
+      <div>
+        <label>OpenAI: API-key (общий для Whisper и GPT)</label>
+        <input id="openai_api_key" type="password" placeholder="sk-..." value="{{config.openai_api_key}}">
+      </div>
+    </div>
+    <div style="margin-top:12px"><button class="btn-ghost" onclick="saveConfig()">Сохранить настройки</button>
+      <span id="cfgMsg" class="meta"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Встреча</h2>
+    <div class="btns">
+      <button class="btn-primary" id="btnStart" onclick="startRec()">● Начать запись</button>
+      <button class="btn-danger hidden" id="btnStop" onclick="stopRec()">■ Остановить и обработать</button>
+    </div>
+    <div class="status" id="status" style="margin-top:12px">Готов к записи.</div>
+    <div class="bar hidden" id="bar"><i></i></div>
+  </div>
+
+  <div class="card hidden" id="resultCard">
+    <h2>Результат</h2>
+    <a class="dl" id="dlDocx" href="/api/report/docx">⬇ Word (.docx)</a>
+    <div id="summary" style="margin:12px 0"></div>
+    <h2>Задачи</h2>
+    <div id="tasks"></div>
+    <h2>Сроки</h2>
+    <div id="deadlines" class="meta"></div>
+    <h2>Принятые решения</h2>
+    <div id="decisions" class="meta"></div>
+    <details style="margin-top:14px">
+      <summary class="meta">Показать полную расшифровку</summary>
+      <div class="out" id="transcript" style="margin-top:8px"></div>
+    </details>
+  </div>
+
+</div>
+
+<script>
+function $(id){return document.getElementById(id);}
+async function saveConfig(){
+  const data = {
+    stt_provider: $('stt_provider').value,
+    stt_api_key: $('stt_api_key').value,
+    stt_folder_id: $('stt_folder_id').value,
+    stt_model: $('stt_model').value,
+    local_model: $('local_model').value,
+    analysis_provider: $('analysis_provider').value,
+    llm_model: $('llm_model').value,
+    openai_api_key: $('openai_api_key').value,
+    openai_model: $('openai_model').value,
+    record_mode: $('record_mode').value,
+  };
+  const r = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
+  $('cfgMsg').textContent = r.ok?'Сохранено ✓':('Ошибка: '+r.error);
+  return r;
+}
+function syncBoxes(){
+  const stt = $('stt_provider').value;
+  const an = $('analysis_provider').value;
+  $('sttYandexBox').classList.toggle('hidden', stt!=='yandex');
+  $('sttOpenaiBox').classList.toggle('hidden', stt!=='openai');
+  $('sttLocalBox').classList.toggle('hidden', stt!=='local');
+  $('llmLocalBox').classList.toggle('hidden', an!=='local');
+  $('openaiAnalysisBox').classList.toggle('hidden', an!=='openai');
+  $('openaiKeyBox').classList.toggle('hidden', !(stt==='openai' || an==='openai'));
+}
+$('stt_provider').onchange = syncBoxes;
+$('analysis_provider').onchange = syncBoxes;
+syncBoxes();
+
+function setStatus(s, cls){ const el=$('status'); el.textContent=s; el.className='status '+cls; }
+async function startRec(){
+  await saveConfig();
+  fetch('/api/start',{method:'POST'}).then(r=>r.json()).then(r=>{
+    if(!r.ok){ setStatus('Ошибка: '+r.error,'err'); return; }
+    $('btnStart').classList.add('hidden'); $('btnStop').classList.remove('hidden');
+    setStatus('● Идёт запись встречи...','rec');
+  });
+}
+function stopRec(){
+  $('btnStop').disabled = true;
+  setStatus('Обработка... (распознавание речи и анализ)','proc');
+  $('bar').classList.remove('hidden');
+  const poll = setInterval(()=>{
+    fetch('/api/status').then(r=>r.json()).then(st=>{
+      if(st.status==='processing'){ $('bar').firstElementChild.style.width = Math.round((st.progress||0)*100)+'%'; setStatus(st.message,'proc'); }
+    });
+  }, 1500);
+  fetch('/api/stop',{method:'POST'}).then(r=>r.json()).then(r=>{
+    clearInterval(poll);
+    $('btnStop').classList.add('hidden'); $('btnStop').disabled=false; $('btnStart').classList.remove('hidden');
+    if(!r.ok){ setStatus('Ошибка: '+r.error,'err'); return; }
+    render(r.report, r.transcript);
+    setStatus('✓ Готово!','done'); $('bar').firstElementChild.style.width='100%';
+  }).catch(e=>{ clearInterval(poll); setStatus('Ошибка сети: '+e,'err'); });
+}
+function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function render(rep, transcript){
+  $('resultCard').classList.remove('hidden');
+  $('summary').innerHTML = '<div class="out">'+esc(rep.summary)+'</div>';
+  const t = $('tasks'); t.innerHTML='';
+  (rep.tasks||[]).forEach(x=>{
+    const d=document.createElement('div'); d.className='task';
+    d.innerHTML = '<b>'+esc(x.description)+'</b><div class="meta">Ответственный: '+(x.owner||'—')+' | Срок: '+(x.deadline||'—')+'</div>';
+    t.appendChild(d);
+  });
+  if(!(rep.tasks||[]).length) t.innerHTML='<div class="meta">Задач не выявлено.</div>';
+  $('deadlines').innerHTML = (rep.deadlines||[]).map(d=>'• '+esc(d.what)+': <b>'+esc(d.when)+'</b>').join('<br>') || 'Сроков не выявлено.';
+  $('decisions').innerHTML = (rep.decisions||[]).map(d=>'• '+esc(d)).join('<br>') || 'Решений не выявлено.';
+  $('transcript').textContent = transcript || '';
+}
+</script>
+</body>
+</html>
